@@ -68,6 +68,7 @@ MyCorrection::MyCorrection(const TString &era, const TString &period,
   loadCorrectionSet(config, "btagging_eff", cset_btagging_eff);
   loadCorrectionSet(config, "ctagging_R", cset_ctagging_R);
   loadCorrectionSet(config, "electron", cset_electron);
+  loadCorrectionSet(config, "electron_heep", cset_electron_heep);
   loadCorrectionSet(config, "electron_variation", cset_electron_variation);
   loadCorrectionSet(config, "electron_hlt", cset_electron_hlt);
   loadCorrectionSet(config, "met", cset_met);
