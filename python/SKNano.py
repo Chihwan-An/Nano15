@@ -18,6 +18,7 @@ import socket
 import subprocess
 import tarfile
 import hashlib
+import time
 import glob
 from pathlib import Path
 
@@ -128,6 +129,8 @@ SOURCE_SNAPSHOT_IGNORE_SUFFIXES = (
     ".o",
     ".pyc",
     ".pkl",
+    ".tsv",
+    ".csv",
     ".npz",
     ".npy",
     ".h5",
@@ -318,6 +321,61 @@ def makeSourceArchive(master_dir, snapshot_dir, git_info):
         "size_bytes": os.path.getsize(archive_path),
     }
 
+def gitSnapshotFiles(repository):
+    """Files git considers source, relative to *repository*.
+
+    An analysis module is a working directory, not a source tree: it holds the
+    BDT trainings, the plot outputs and the validation dumps the analysis has
+    produced so far.  .gitignore already says which of those are not source,
+    and the ignore list here cannot -- it filters by name and suffix, and the
+    outputs are .tsv and .json like the sample metadata is.
+
+    Untracked-but-not-ignored files are included: an analyzer added since the
+    last commit is source and has to reach the job.
+
+    Returns None when *repository* is not a git working tree, so the caller can
+    fall back to copying it whole.
+    """
+    try:
+        listing = subprocess.run(
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            cwd=repository, check=True, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout
+    except Exception:
+        return None
+    return [name for name in listing.split("\0") if name]
+
+def copySnapshotFileList(source_dir, target_dir, relpaths):
+    """Copy *relpaths* from *source_dir* into *target_dir*.
+
+    Applies the same per-file rules as sourceSnapshotIgnore: a submodule
+    gitlink is a directory rather than a file, a tracked file may have been
+    deleted in the working tree, and a file over the size cap does not belong
+    in a snapshot that gets archived on every submission.
+    """
+    copied = 0
+    skipped = []
+    for relpath in relpaths:
+        source = os.path.join(source_dir, relpath)
+        if not os.path.isfile(source):
+            continue
+        name = os.path.basename(relpath)
+        if name.endswith(SOURCE_SNAPSHOT_IGNORE_SUFFIXES):
+            skipped.append(relpath)
+            continue
+        try:
+            if os.path.getsize(source) > MAX_SOURCE_SNAPSHOT_FILE_BYTES:
+                skipped.append(relpath)
+                continue
+        except OSError:
+            skipped.append(relpath)
+            continue
+        target = os.path.join(target_dir, relpath)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copy2(source, target)
+        copied += 1
+    return copied, skipped
+
 def makeSourceSnapshot(master_dir):
     snapshot_dir = os.path.join(master_dir, SOURCE_SNAPSHOT_DIRNAME)
     os.makedirs(snapshot_dir, exist_ok=True)
@@ -339,13 +397,29 @@ def makeSourceSnapshot(master_dir):
     for module_dir in getAnalysisModuleDirs():
         module_name = os.path.basename(module_dir.rstrip(os.sep))
         target = os.path.join(snapshot_dir, "analysis_modules", module_name)
-        shutil.copytree(module_dir, target, ignore=sourceSnapshotIgnore,
-                        dirs_exist_ok=True)
+        # Copying the module whole means copying whatever the analysis has
+        # produced in it -- hundreds of MB of trainings and plots on a working
+        # module -- to network storage and then through tar and sha256, on
+        # every submission.  Ask git what is source instead.
+        tracked = gitSnapshotFiles(module_dir)
+        if tracked is None:
+            shutil.copytree(module_dir, target, ignore=sourceSnapshotIgnore,
+                            dirs_exist_ok=True)
+            module_source_selection = "whole directory"
+            module_nfiles, module_skipped = None, []
+        else:
+            os.makedirs(target, exist_ok=True)
+            module_nfiles, module_skipped = copySnapshotFileList(
+                module_dir, target, tracked)
+            module_source_selection = "git"
         module_git = getGitInfo(module_dir)
         modules.append({
             "name": module_name,
             "source": module_dir,
             "snapshot": target,
+            "selection": module_source_selection,
+            "nfiles": module_nfiles,
+            "skipped": module_skipped,
             "git": module_git,
             "schema_versions": getModuleSchemaVersions(module_dir),
         })
@@ -1443,7 +1517,14 @@ if __name__ == '__main__':
     userflags = getUserFlagsList(args.Userflags)
     timestamp, string_JobStartTime = getTimeStamp()
     _, abs_MasterDirectoryName= getMasterDirectoryName(timestamp, args.Analyzer, userflags)
+    # This is the one step between the master directory and the first progress
+    # bar, and it writes and then archives the whole source tree, so say so
+    # rather than looking hung.
+    print("Snapshotting source...", end="", flush=True)
+    snapshot_start = time.time()
     source_snapshot = makeSourceSnapshot(abs_MasterDirectoryName)
+    archive_mb = source_snapshot['archive']['size_bytes'] / (1024 * 1024)
+    print(f" {time.time() - snapshot_start:.1f}s ({archive_mb:.1f} MB archive)")
     InputSamplelist = getInputSampleList(args.InputSample)
     period_filter = parsePeriodFilter(args.Period)
     exclude_regexes = getExcludeRegexList(args.ExcludeSample)
