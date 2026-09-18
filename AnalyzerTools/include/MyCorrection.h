@@ -66,6 +66,19 @@ public:
         float error = 0.f;
     };
 
+    // Every momentum lane of one medium-pT muon, in GeV, as produced by the
+    // MUO POG scale and resolution correction (muon_scalesmearing.json.gz).
+    // Data carries only the nominal; its scale and resolution lanes equal the
+    // nominal because the POG publishes no data-side uncertainty and the
+    // nuisance rides on the simulation templates.
+    struct MuonMomentumLanes {
+        float nominal = 0.f;
+        float scaleUp = 0.f;
+        float scaleDown = 0.f;
+        float resUp = 0.f;
+        float resDown = 0.f;
+    };
+
     struct JERSFSet {
         float nom = 1.f;
         float up = 1.f;
@@ -90,11 +103,78 @@ public:
     bool IsGoldenLumi(const unsigned int runNumber, const unsigned int lumiSection) const;
 
     // Muon
+    // ---- Medium-pT momentum correction ----------------------------------
+    // Two implementations live side by side and the era yml picks one:
+    //
+    //  * muon_scalesmearing (MUO POG "MuonScaRe", Run 3): scale on data and
+    //    simulation, extra resolution smearing on simulation, uncertainties
+    //    from the file.  GetMuonScaleSmearing() is the entry point.
+    //  * roccor (Rochester, Run 2 and eras without a POG file):
+    //    GetMuonScaleAndError() returns a multiplicative factor and its error.
+    //
+    // HasMuonScaleSmearing() tells the caller which one is configured.
+    bool HasMuonScaleSmearing() const { return muSS_loaded; }
+    // POG recipe, valid for 26 < pt < 200 GeV; outside that window every lane
+    // equals pt.  trackerLayers is ignored for data.  The resolution smearing
+    // draws its random number from the file's own deterministic generator
+    // (event number, lumi section, phi), so it reproduces across passes and
+    // does not depend on the framework RNG mode.
+    // withVariations=false stops after the nominal: the scale and resolution
+    // uncertainties cost four more correctionlib evaluations per muon, and the
+    // nominal path has no use for them. The nominal is deterministic, so a
+    // later full call reproduces it exactly.
+    MuonMomentumLanes GetMuonScaleSmearing(int charge, float pt, float eta,
+                                           float phi, int trackerLayers,
+                                           unsigned long long eventNumber,
+                                           unsigned int lumiBlock,
+                                           bool withVariations = true) const;
     MuonScaleAndError GetMuonScaleAndError(int charge, float pt, float eta,
                                            float phi, int trackerLayers,
                                            float matchedPt = 0.f) const;
     float GetMuonRECOSF(const MuonView &muon, const variation syst = variation::nom) const;
     float GetMuonRECOSF(const MuonViewCollection &muons, const variation syst = variation::nom) const;
+
+    // ---- High-pT muon scale factors (muon_HighPt.json.gz) --------------------
+    // These take explicit numbers rather than a MuonView on purpose: which
+    // momentum to feed them is the caller's decision and getting it wrong is
+    // silent. The reco SF is binned in the full momentum p, the other keys in
+    // pt, and a muon selected through the high-pT path carries TuneP momentum
+    // rather than MuonView::Pt(). Every key is binned from 50 GeV to infinity
+    // over |eta| < 2.4; both are clamped here because correctionlib throws
+    // outside the map.
+    static constexpr float HIGHPT_MUON_MIN_PT = 200.f;   // regime boundary
+    static constexpr float HIGHPT_SF_MIN_MOMENTUM = 50.f; // map lower edge
+    static constexpr float HIGHPT_SF_MAX_ABSETA = 2.4f;   // map upper edge
+
+    // key: NUM_HighPtID_DEN_GlobalMuonProbes, NUM_HLT_DEN_HighPtLooseRelIsoProbes,
+    //      NUM_probe_LooseRelTkIso_DEN_HighPtProbes, ... (binned in pt)
+    float GetMuonHighPtSF(const TString &key, const float eta, const float pt,
+                          const variation syst = variation::nom) const;
+    // NUM_GlobalMuons_DEN_TrackerMuonProbes, binned in the full momentum p.
+    float GetMuonHighPtRECOSF(const float eta, const float p,
+                              const variation syst = variation::nom) const;
+
+    // Generalized Endpoint momentum scale, for pt above HIGHPT_MUON_MIN_PT and
+    // data only: the bias belongs to data, so it is removed there rather than
+    // injected into simulation. Eras without a kappa map return pt unchanged.
+    float GetMuonGEScaledPt(const float pt, const float eta, const float phi,
+                            const int charge,
+                            const variation syst = variation::nom) const;
+    // The same shift driven by the kappa uncertainty alone, with no central
+    // bias. This is the simulation nuisance: data already carries the nominal
+    // correction, so the template only has to move by the measurement error.
+    // Returns pt unchanged for the nominal variation.
+    float GetMuonGESigmaShiftedPt(const float pt, const float eta,
+                                  const float phi, const int charge,
+                                  const variation syst) const;
+
+    // High-pT resolution width, a cubic in the full momentum p (not pt).
+    float GetMuonHighPtResolution(const float p, const float eta) const;
+    // Extra smearing applied to simulation in the high-pT regime. Returns 1 for
+    // data and for eras with no resolution map.
+    float GetMuonHighPtSmearFactor(const float p, const float eta,
+                                   const unsigned int seed,
+                                   const variation syst = variation::nom) const;
     float GetMuonIDSF(const TString &key, const MuonView &muon,
                       variation syst = variation::nom) const;
     float GetMuonIDSF(const TString &key, const MuonViewCollection &muons,
@@ -432,6 +512,16 @@ private:
     
 
     unique_ptr<CorrectionSet> cset_muon;
+    unique_ptr<CorrectionSet> cset_muon_highpt;
+    // MUO POG scale/resolution (MuonScaRe).  The individual corrections are
+    // bound once at construction: GetMuonScaleSmearing evaluates up to nine
+    // of them per muon and a CorrectionSet::at() is a string-keyed lookup.
+    unique_ptr<CorrectionSet> cset_muon_scalesmearing;
+    bool muSS_loaded = false;
+    correction::Correction::Ref muSS_a_data, muSS_m_data, muSS_a_mc, muSS_m_mc;
+    correction::Correction::Ref muSS_k_data, muSS_k_mc;
+    correction::Correction::Ref muSS_cb_params, muSS_poly_params;
+    correction::Correction::Ref muSS_random;
     unique_ptr<CorrectionSet> cset_tau;
     unique_ptr<CorrectionSet> cset_muon_trig_eff;
     unique_ptr<CorrectionSet> cset_muon_trig_sf;
