@@ -71,6 +71,12 @@ MyCorrection::MyCorrection(const TString &era, const TString &period,
   LUM_era_key = config.key("LUM");
   EGM_era_key = config.key("EGM");
   EGM_era_scale_key = EGM_era_key + "_ScaleJSON";
+  // The 2024 electronSS_EtDependent file names these two without an era tag,
+  // unlike the 2022-2023 campaigns (EGMScale_Compound_Ele_2023postBPIX, ...).
+  // Only 2024 has an era yml today; when an older campaign gets one, resolve
+  // the tagged spelling here instead of hard-coding it.
+  EGM_scale_compound_key = "Scale";
+  EGM_smear_syst_key = "SmearAndSyst";
   EGM_era_prompt = string(GetEra().Data()) + "Prompt";
   JME_vetomap_key = config.key("JME_vetomap");
 

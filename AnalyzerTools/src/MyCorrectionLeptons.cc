@@ -100,6 +100,10 @@ float MyCorrection::GetElectronScaleUnc(const float scEta,
                                         const variation syst) const {
   if (IsDATA)
     return 1.0;
+  // Eras whose EGM scale-and-smearing file is absent get no variation rather
+  // than a null dereference.
+  if (!cset_electron_variation)
+    return 1.0;
 
   switch (Run) {
   case 2: {
@@ -114,24 +118,17 @@ float MyCorrection::GetElectronScaleUnc(const float scEta,
   case 3: {
     if (syst == variation::nom)
       return 1.;
-    static const string scale2022Key = "Scale";
-    const string &key =
-        GetEra().Contains("2022") ? scale2022Key : EGM_era_scale_key;
-    auto cset = cset_electron_variation->at(key);
-    vector<correction::Variable::Type> args = {"total_uncertainty",
-                                               static_cast<int>(seedGain),
-                                               static_cast<float>(runNumber),
-                                               scEta,
-                                               r9,
-                                               pt};
-    const float unc = safeEvaluate(cset, "GetElectronScaleSF", args);
-    if (syst == variation::up)
-      return 1. + unc;
-    else if (syst == variation::down)
-      return 1. - unc;
-    else
-      throw runtime_error(
-          "[MyCorrection::GetElectronScaleUnc] Invalid syst value");
+    // The EtDependent JSON keeps the scale uncertainties in the SmearAndSyst
+    // correction, keyed by syst, and they are already multiplicative factors
+    // (scale_up = 1 + escale). The older schema exposed them through the scale
+    // correction under "total_uncertainty", which this file does not have.
+    static_cast<void>(seedGain);
+    static_cast<void>(runNumber);
+    auto cset = cset_electron_variation->at(EGM_smear_syst_key);
+    const string systKey = (syst == variation::up) ? "scale_up" : "scale_down";
+    // Inputs are (syst, pt, r9, ScEta) -- signed eta, not folded.
+    return safeEvaluate(cset, "GetElectronScaleUnc",
+                        {systKey, pt, r9, scEta});
   }
   default:
     throw runtime_error(

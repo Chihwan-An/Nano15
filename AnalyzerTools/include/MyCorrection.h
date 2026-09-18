@@ -454,6 +454,10 @@ private:
     string LUM_era_key;      // pileup profile, e.g. "Collisions24_..._goldenJSON"
     string EGM_era_key;      // EGM campaign tag, e.g. "2024Prompt"
     string EGM_era_scale_key;
+    // electronSS_EtDependent.json.gz keys. Every correction in that file
+    // carries the era tag, e.g. EGMScale_Compound_Ele_2023postBPIX.
+    string EGM_scale_compound_key; // data: the full scale chain
+    string EGM_smear_syst_key;     // simulation: smearing and its systematics
     string EGM_era_prompt;   // era + "Prompt", the Run3 electron SF campaign key
     string JME_vetomap_key;
     // JERC global tags, still carrying the "######" level placeholder.
