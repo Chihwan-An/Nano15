@@ -114,14 +114,19 @@ def resolve_sample_paths(sample_info: Mapping[str, Any],
     if not os.path.isabs(pattern):
         pattern = os.path.join(input_root(), pattern)
 
-    paths = sorted(
+    # A set, not just a sort: the storage backing some 2024 datasets
+    # (QCD_Bin-PT-600to800_Fil-MuEnriched) returns the same directory
+    # entry more than once, so glob yields each file up to eight times.
+    # Handing the duplicates to a job multiplies that sample's event and
+    # weight sums, which nothing downstream would flag.
+    paths = sorted({
         path for path in glob.glob(pattern, recursive=True)
         if os.path.isfile(path) and path.endswith(".root")
         # A production being written into right now leaves partial files
         # behind; feeding one to a job silently truncates the sample. glob
         # already skips leading dots, this is the belt to that pair of braces.
         and not os.path.basename(path).startswith(".")
-    )
+    })
     if not sample_info.get("isMC") and not sample_info.get("path_glob"):
         dataset = sample_info.get("PD") or sample_info.get("name")
         paths = [p for p in paths

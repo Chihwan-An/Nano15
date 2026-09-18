@@ -46,6 +46,11 @@ def parse_rootfiles_from(basePath):
     filePaths = []
     for root, _, files in os.walk(basePath):
         for file in files:
+            # crab leaves partially staged outputs behind as .tmp_<id>_<name>;
+            # they are 4% of the 2024 area and counting them would corrupt the
+            # event and weight sums the effective-lumi step derives.
+            if file.startswith(".tmp"):
+                continue
             if file.endswith(".root"):
                 filePaths.append(os.path.join(root, file))
     
