@@ -532,6 +532,57 @@ float MyCorrection::GetElectronScaleUnc(const float scEta,
   return 1.0;
 }
 
+float MyCorrection::GetElectronScaleCorr(const float scEta,
+                                         const unsigned char seedGain,
+                                         const unsigned int runNumber,
+                                         const float r9,
+                                         const float pt) const {
+  // The scale is a data-only correction; simulation carries the uncertainty
+  // instead (GetElectronScaleUnc).
+  if (!IsDATA)
+    return 1.f;
+  // Run 2 NanoAOD already has the EGM calibration applied, and its JSON ships
+  // uncertainties only -- reapplying here would double count.
+  if (Run != 3)
+    return 1.f;
+  if (!cset_electron_variation)
+    return 1.f;
+
+  // seedGain is a binned axis (edges 0/5/10/15) with clamp flow, not a
+  // category, so gains 1, 6 and 12 land in their own bins and anything else
+  // clamps rather than throwing. No guard needed.
+  //
+  // Compound correction stacking EGMScaleVsRun, EleEtaR9, EleFineEtaR9, ElePT,
+  // EleGain and ElePTsplit. Inputs are (syst, run, ScEta, r9, pt, seedGain) in
+  // that order, with signed eta throughout.
+  auto cset = cset_electron_variation->compound().at(EGM_scale_compound_key);
+  return safeEvaluate(cset, "GetElectronScaleCorr",
+                      {"scale", static_cast<float>(runNumber), scEta, r9, pt,
+                       static_cast<float>(seedGain)});
+}
+
+float MyCorrection::GetElectronSmearWidth(const float pt, const float r9,
+                                          const float scEta,
+                                          const variation syst) const {
+  // Smearing applies to simulation only.
+  if (IsDATA)
+    return 0.f;
+  if (Run != 3)
+    return 0.f;
+  if (!cset_electron_variation)
+    return 0.f;
+
+  const string systKey = (syst == variation::up)     ? "smear_up"
+                         : (syst == variation::down) ? "smear_down"
+                                                     : "smear";
+  // Inputs are (syst, pt, r9, ScEta) -- signed eta, not folded.
+  auto cset = cset_electron_variation->at(EGM_smear_syst_key);
+  const float width = safeEvaluate(cset, "GetElectronSmearWidth",
+                                   {systKey, pt, r9, scEta});
+  // smear_down can reach zero; a negative width would be meaningless.
+  return std::max(width, 0.f);
+}
+
 float MyCorrection::GetElectronRECOSF(const float eta, const float pt,
                                       const float phi,
                                       const variation syst) const {
@@ -558,7 +609,9 @@ float MyCorrection::GetElectronRECOSF(const float eta, const float pt,
 
 float MyCorrection::GetElectronRECOSF(const ElectronView &electron,
                                       const variation syst) const {
-  return GetElectronRECOSF(std::fabs(electron.Eta()), electron.Pt(),
+  // Uncalibrated pt, as the muon SFs read MiniAODPt(): Pt() now carries the
+  // EGM scale and smearing, which would move electrons across SF pt bins.
+  return GetElectronRECOSF(std::fabs(electron.Eta()), electron.MiniAODPt(),
                            electron.Phi(), syst);
 }
 
@@ -592,7 +645,9 @@ float MyCorrection::GetElectronIDSF(const TString &Electron_ID_SF_Key,
 float MyCorrection::GetElectronIDSF(const TString &key,
                                     const ElectronView &electron,
                                     const variation syst) const {
-  return GetElectronIDSF(key, std::fabs(electron.Eta()), electron.Pt(),
+  // Uncalibrated pt, as the muon SFs read MiniAODPt(): Pt() now carries the
+  // EGM scale and smearing, which would move electrons across SF pt bins.
+  return GetElectronIDSF(key, std::fabs(electron.Eta()), electron.MiniAODPt(),
                          electron.Phi(), syst);
 }
 

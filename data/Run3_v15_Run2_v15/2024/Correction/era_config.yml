@@ -79,7 +79,7 @@ pog_files:
   puWeights:          {pog: LUM, name: puWeights_BCDEFGHI.json.gz}
   btagging:           {pog: BTV, name: btagging.json.gz}
   electron:           {pog: EGM, name: electron.json.gz}
-  electron_variation: {pog: EGM, name: electronSS_EtDependent.json.gz}
+  electron_variation: {pog: EGM, name: electronSS_EtDependent.json.gz, required: true}
   electron_hlt:       {pog: EGM, name: electronHlt.json.gz}
   # Not published for 2024 yet -- restore when they appear:
   #   ctagging:   {pog: BTV, name: ctagging.json.gz}

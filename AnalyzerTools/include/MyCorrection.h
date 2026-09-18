@@ -192,6 +192,22 @@ public:
 
     // electron
     float GetElectronScaleUnc(const float scEta, const unsigned char seedGain, const unsigned int runNumber, const float r9, const float pt, const variation syst = variation::nom) const;
+
+    // ---- Electron energy scale and smearing (electronSS_EtDependent.json.gz) -
+    // Run 3 NanoAOD ships without the EGM calibration applied, so the nominal
+    // correction has to happen here: a scale on data, a smearing in simulation.
+    // Returns 1 outside Run 3, where NanoAOD already carries it.
+    //
+    // Multiplicative scale for data. Simulation gets 1.
+    float GetElectronScaleCorr(const float scEta, const unsigned char seedGain,
+                               const unsigned int runNumber, const float r9,
+                               const float pt) const;
+    // Gaussian WIDTH of the extra smearing for simulation, not a factor: the
+    // caller draws the random number so nominal and variations can share it.
+    // Data gets 0. syst selects smear / smear_up / smear_down.
+    float GetElectronSmearWidth(const float pt, const float r9,
+                                const float scEta,
+                                const variation syst = variation::nom) const;
     float GetElectronRECOSF(const float abseta, const float pt, const float phi, const variation syst = variation::nom) const;
     float GetElectronRECOSF(const ElectronView &electron, const variation syst = variation::nom) const;
     float GetElectronRECOSF(const ElectronViewCollection &electrons, const variation syst = variation::nom) const;
