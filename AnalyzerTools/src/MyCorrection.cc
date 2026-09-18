@@ -38,6 +38,27 @@ MyCorrection::MyCorrection(const TString &era, const TString &period,
   loadCorrectionSet(config, "jerc", cset_jerc);
   loadCorrectionSet(config, "jetvetomap", cset_jetvetomap);
   loadCorrectionSet(config, "muon", cset_muon);
+  loadCorrectionSet(config, "muon_highpt", cset_muon_highpt);
+  if (loadCorrectionSet(config, "muon_scalesmearing",
+                        cset_muon_scalesmearing)) {
+    try {
+      muSS_a_data = cset_muon_scalesmearing->at("a_data");
+      muSS_m_data = cset_muon_scalesmearing->at("m_data");
+      muSS_a_mc = cset_muon_scalesmearing->at("a_mc");
+      muSS_m_mc = cset_muon_scalesmearing->at("m_mc");
+      muSS_k_data = cset_muon_scalesmearing->at("k_data");
+      muSS_k_mc = cset_muon_scalesmearing->at("k_mc");
+      muSS_cb_params = cset_muon_scalesmearing->at("cb_params");
+      muSS_poly_params = cset_muon_scalesmearing->at("poly_params");
+      muSS_random = cset_muon_scalesmearing->at("RandomSmearing");
+      muSS_loaded = true;
+    } catch (const exception &e) {
+      throw SKNano::ConfigError(
+          string("[MyCorrection::MyCorrection] muon_scalesmearing file does "
+                 "not have the MuonScaRe layout: ") +
+          e.what());
+    }
+  }
   loadCorrectionSet(config, "tau", cset_tau);
   loadCorrectionSet(config, "muon_trig_eff", cset_muon_trig_eff);
   loadCorrectionSet(config, "muon_trig_sf", cset_muon_trig_sf);
@@ -51,7 +72,17 @@ MyCorrection::MyCorrection(const TString &era, const TString &period,
   loadCorrectionSet(config, "electron_hlt", cset_electron_hlt);
   loadCorrectionSet(config, "met", cset_met);
 
-  loadRoccoR(config.path("roccor"), true);
+  // Rochester is the fallback for eras without a POG scale/smearing file. An
+  // era that configures neither would run with uncorrected muons, and nothing
+  // downstream could tell, so refuse to construct rather than warn.
+  if (!config.path("roccor").empty()) {
+    loadRoccoR(config.path("roccor"), true);
+  } else if (!muSS_loaded) {
+    throw SKNano::ConfigError(
+        "[MyCorrection::MyCorrection] neither muon_scalesmearing nor roccor "
+        "is configured for era " + string(GetEra().Data()) +
+        "; muon momenta would stay uncorrected");
+  }
   loadGoldenJson(config.path("golden_json"), true);
 
   const auto loadModel = [&config](const string &name) {

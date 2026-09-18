@@ -348,7 +348,15 @@ public:
     // Event-scoped, read-only input access. Selections retain raw indices.
     Event GetEvent();
     MuonViewCollection GetAllMuonViews();
+    // Lazy correction stages. Each SoA binds these and materialises one on
+    // the first access to a lane it owns, so the nominal path never pays for
+    // a variation it does not read.
     void PopulateMuonMomentum(MuonSoA &storage);
+    void PopulateMuonMomentumVariations(MuonSoA &storage);
+    void PopulateMuonHighPt(MuonSoA &storage);
+    void PopulateMuonHighPtVariations(MuonSoA &storage);
+    float MuonRochesterMatchedGenPt(const MuonSoA &storage, std::size_t index,
+                                    GenViewCollection &truth, bool &truthLoaded);
     GenViewCollection GetAllGenViews();
     JetViewCollection GetAllJetViews();
     SelectedJetViewCollection SelectJetViews(
@@ -377,6 +385,12 @@ public:
     GenVisTauViewCollection GetAllGenVisTauViews();
     std::vector<std::size_t> SelectMuonIndices(const MuonViewCollection &muons, const std::vector<std::size_t> &seed_indices, const MuonView::MuonID ID, const float ptmin, const float fetamax) const;
     std::vector<std::size_t> SelectMuonIndices(const MuonViewCollection &muons, const MuonView::MuonID ID, const float ptmin, const float fetamax) const;
+    // High-pT muon selection (MUO POG "High pT" prescription). Cuts on
+    // MuonView::HighPtPt() instead of Pt(), so muons past ~200 GeV are judged
+    // on TuneP with the Generalized Endpoint scale. Opt-in: SelectMuonIndices
+    // above is unchanged.
+    std::vector<std::size_t> SelectHighPtMuonIndices(const MuonViewCollection &muons, const std::vector<std::size_t> &seed_indices, const MuonView::MuonID ID, const float ptmin, const float fetamax) const;
+    std::vector<std::size_t> SelectHighPtMuonIndices(const MuonViewCollection &muons, const MuonView::MuonID ID, const float ptmin, const float fetamax) const;
     MuonViewCollection SelectMuonViews(const MuonViewCollection &muons,
         std::vector<std::size_t> indices, bool sortByPt = true) const;
     ElectronViewCollection GetAllElectronViews();
