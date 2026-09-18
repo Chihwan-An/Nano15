@@ -692,6 +692,47 @@ def getMasterDirectoryName(timeStamp, Analyzer, Userflags):
     #print("...Done")
     return MasterDirectoryName, abs_MasterDirectoryName
 
+def getMambaEnvSettings():
+    # The batch scripts have to activate the very environment the submission ran
+    # in: a job that picks up a different ROOT than the one the libraries were
+    # built against segfaults inside dlopen.
+    # Inside a singularity image the root prefix is /opt/conda, but the image
+    # only carries the environments that were linked when it was built, so the
+    # generated script falls back to the absolute prefix when the name is not
+    # found there.
+    # The script also has to run by hand on a login node, where /opt/conda does
+    # not exist, so it carries the submitting shell's own micromamba as a
+    # fallback. That fallback is not $MAMBA_ROOT_PREFIX/bin: micromamba is
+    # commonly installed outside its root prefix, so prefer $MAMBA_EXE.
+    singularity_image = os.environ["SINGULARITY_IMAGE"]
+    env_prefix = os.environ.get('CONDA_PREFIX', '')
+    if not env_prefix:
+        print('\033[91m'+"Error: no conda/mamba environment is active, source setup.sh before submitting"+'\033[0m')
+        exit()
+    host_root_prefix = os.environ.get('MAMBA_ROOT_PREFIX') or os.path.dirname(os.path.dirname(env_prefix))
+    mamba_exe = os.environ.get('MAMBA_EXE', '')
+    host_bin_path = os.path.dirname(mamba_exe) if mamba_exe else os.path.join(host_root_prefix, 'bin')
+    root_prefix = "/opt/conda" if singularity_image else host_root_prefix
+    checkRootMatchesEnv(env_prefix)
+    return root_prefix, os.path.basename(env_prefix), env_prefix, host_root_prefix, host_bin_path
+
+def checkRootMatchesEnv(env_prefix):
+    # The analyzer libraries are linked against one specific ROOT soname. An
+    # environment carrying a different one loads them anyway and then segfaults
+    # inside dlopen, so refuse to submit instead of letting every job die.
+    probe = os.path.join(SKNANO_LIB, "libAnalyzerFramework.so")
+    if not os.path.exists(probe):
+        return
+    with open(probe, 'rb') as f:
+        soname = re.search(rb'libCore\.so\.6\.\d+', f.read())
+    if soname is None:
+        return
+    soname = soname.group().decode()
+    if not os.path.exists(os.path.join(env_prefix, "lib", soname)):
+        print('\033[91m'+f"Error: {probe} needs {soname}, which {env_prefix} does not provide"+'\033[0m')
+        print('\033[91m'+"The jobs would segfault on library load. Activate the environment the libraries were built in, or rebuild."+'\033[0m')
+        exit()
+
 def getInputSampleList(inputArguments):
     #if string
     if inputArguments.endswith(".txt"):
@@ -913,14 +954,13 @@ def makeMainAnalyzerJobs(working_dir,abs_MasterDirectoryName,totalNumberOfJobs, 
     template_path = os.path.join(SKNANO_HOME, "templates", run_template)
     with open(template_path, 'r') as f:
         run_content = f.read()
-    #mamba_bin_path = os.environ['MAMBA_EXE']
-    #mamba_bin_path = os.path.dirname(mamba_bin_path)
-    # We need to fetch the MAMBA_ROOT_PREFIX from the singularity image if running in a singularity container
-    # Currently, we assume that /opt/conda is the MAMBA_ROOT_PREFIX
-    singularity_image = os.environ["SINGULARITY_IMAGE"]
-    mamba_root_prefix = "/opt/conda" if singularity_image else os.environ['MAMBA_ROOT_PREFIX']
+    mamba_root_prefix, mamba_env, mamba_env_prefix, mamba_host_root_prefix, mamba_host_bin_path = getMambaEnvSettings()
     run_content = run_content.replace("[MAMBA_BIN_PATH]", os.path.join(mamba_root_prefix, "bin"))
     run_content = run_content.replace("[MAMBA_ROOT_PREFIX]", mamba_root_prefix)
+    run_content = run_content.replace("[MAMBA_HOST_BIN_PATH]", mamba_host_bin_path)
+    run_content = run_content.replace("[MAMBA_HOST_ROOT_PREFIX]", mamba_host_root_prefix)
+    run_content = run_content.replace("[MAMBA_ENV_PREFIX]", mamba_env_prefix)
+    run_content = run_content.replace("[MAMBA_ENV]", mamba_env)
     snapshot_home = os.path.join(abs_MasterDirectoryName, SOURCE_SNAPSHOT_DIRNAME)
     lhapdf_include_dir = os.environ.get('LHAPDF_INCLUDE_DIR', os.path.join(SKNANO_HOME, 'external', 'lhapdf', 'redhat', 'include'))
     lhapdf_lib_dir = os.environ.get('LHAPDF_LIB_DIR', os.path.join(SKNANO_HOME, 'external', 'lhapdf', 'redhat', 'lib'))
@@ -979,6 +1019,13 @@ def makeHaddJobs(working_dir,argparser,sample,totalNumberofJobs):
         template_path = os.path.join(SKNANO_HOME, "templates", "merge_partial.sh")
         with open(template_path, 'r') as f:
             partial_content = f.read()
+        mamba_root_prefix, mamba_env, mamba_env_prefix, mamba_host_root_prefix, mamba_host_bin_path = getMambaEnvSettings()
+        partial_content = partial_content.replace("[MAMBA_BIN_PATH]", os.path.join(mamba_root_prefix, "bin"))
+        partial_content = partial_content.replace("[MAMBA_ROOT_PREFIX]", mamba_root_prefix)
+        partial_content = partial_content.replace("[MAMBA_HOST_BIN_PATH]", mamba_host_bin_path)
+        partial_content = partial_content.replace("[MAMBA_HOST_ROOT_PREFIX]", mamba_host_root_prefix)
+        partial_content = partial_content.replace("[MAMBA_ENV_PREFIX]", mamba_env_prefix)
+        partial_content = partial_content.replace("[MAMBA_ENV]", mamba_env)
         partial_content = partial_content.replace("[WORKDIR]", working_dir)
         partial_content = partial_content.replace("[SKNANO_HOME]", SKNANO_HOME)
         partial_content = partial_content.replace("[GROUP_SIZE]", str(argparser.MergeGroupSize))
@@ -1007,6 +1054,13 @@ def makeHaddJobs(working_dir,argparser,sample,totalNumberofJobs):
     template_path = os.path.join(SKNANO_HOME, "templates", "hadd.sh")
     with open(template_path, 'r') as f:
         hadd_content = f.read()
+    mamba_root_prefix, mamba_env, mamba_env_prefix, mamba_host_root_prefix, mamba_host_bin_path = getMambaEnvSettings()
+    hadd_content = hadd_content.replace("[MAMBA_BIN_PATH]", os.path.join(mamba_root_prefix, "bin"))
+    hadd_content = hadd_content.replace("[MAMBA_ROOT_PREFIX]", mamba_root_prefix)
+    hadd_content = hadd_content.replace("[MAMBA_HOST_BIN_PATH]", mamba_host_bin_path)
+    hadd_content = hadd_content.replace("[MAMBA_HOST_ROOT_PREFIX]", mamba_host_root_prefix)
+    hadd_content = hadd_content.replace("[MAMBA_ENV_PREFIX]", mamba_env_prefix)
+    hadd_content = hadd_content.replace("[MAMBA_ENV]", mamba_env)
     hadd_content = hadd_content.replace("[WORKDIR]", working_dir)
     hadd_content = hadd_content.replace("[SKNANO_HOME]", SKNANO_HOME)
     hadd_content = hadd_content.replace("[TARGET]", hadd_target)
