@@ -214,6 +214,17 @@ public:
     float GetElectronIDSF(const TString &Electron_ID_SF_Key, const float abseta, const float pt, const float phi, const variation syst = variation::nom) const;
     float GetElectronIDSF(const TString &key, const ElectronView &electron, const variation syst = variation::nom) const;
     float GetElectronIDSF(const TString &key, const ElectronViewCollection &electrons, const variation syst = variation::nom) const;
+    // ---- HEEP (high-pT) electron ID scale factor ----------------------------
+    // EGM publishes the HEEPID working point on a separate branch of the
+    // electron SF file (EGM/<campaign>/heep-id/electron.json.gz), wired in the
+    // era yml as "electron_heep". Binned in signed supercluster eta and pt from
+    // 35 GeV with error flow, so scEta must be the SC eta and pt is clamped to
+    // the map's lower edge here. HasElectronHEEPIDSF() is false for eras that
+    // do not configure the file; calling the getter then throws.
+    bool HasElectronHEEPIDSF() const { return static_cast<bool>(cset_electron_heep); }
+    float GetElectronHEEPIDSF(const float scEta, const float pt,
+                              const variation syst = variation::nom) const;
+    static constexpr float HEEP_SF_MIN_PT = 35.f; // map lower edge
     // photon
 
     // tau
@@ -547,6 +558,7 @@ private:
     unique_ptr<CorrectionSet> cset_btagging_eff;
     unique_ptr<CorrectionSet> cset_ctagging_R;
     unique_ptr<CorrectionSet> cset_electron;
+    unique_ptr<CorrectionSet> cset_electron_heep; // EGM heep-id branch
     unique_ptr<CorrectionSet> cset_electron_hlt;
     unique_ptr<CorrectionSet> cset_electron_variation;
     unique_ptr<CorrectionSet> cset_jetid;
@@ -584,6 +596,7 @@ private:
     LazyRef cachedFatJetIDTight;
     LazyRef cachedFatJetIDTightLepVeto;
     LazyRef cachedElectronIDSF;
+    LazyRef cachedElectronHEEPIDSF;
     LazyRef cachedElectronHltSF;
     LazyRef cachedElectronHltDataEff;
     LazyRef cachedElectronHltMcEff;

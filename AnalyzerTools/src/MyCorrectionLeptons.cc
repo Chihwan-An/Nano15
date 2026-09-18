@@ -642,6 +642,21 @@ float MyCorrection::GetElectronIDSF(const TString &Electron_ID_SF_Key,
                        eta, pt < 999.9f ? pt : 999.9f});
 }
 
+float MyCorrection::GetElectronHEEPIDSF(const float scEta, const float pt,
+                                        const variation syst) const {
+  if (!cset_electron_heep)
+    throwNullCorrection("GetElectronHEEPIDSF");
+  // Same "Electron-ID-SF" layout as the main file, with the HEEPID working
+  // point added; only the Run 3 spelling exists on the heep-id branch.
+  const auto &cset = cachedElectronHEEPIDSF.get(cset_electron_heep, "Electron-ID-SF");
+  // The pt axis starts at 35 GeV and ends at infinity, and the flow is
+  // "error": below the edge correctionlib throws rather than clamping.
+  const float clampedPt = std::max(pt, HEEP_SF_MIN_PT);
+  return safeEvaluate(cset, "GetElectronHEEPIDSF",
+                      {EGM_era_prompt, getSystString_EGM(syst), "HEEPID",
+                       scEta, clampedPt});
+}
+
 float MyCorrection::GetElectronIDSF(const TString &key,
                                     const ElectronView &electron,
                                     const variation syst) const {

@@ -172,4 +172,25 @@ TEST_F(MuonScaleSmearing, EdgeOfAcceptanceDoesNotThrow) {
             EXPECT_NO_THROW(mc_->GetMuonScaleSmearing(-1, 100.f, eta, phi, 5, 1, 1));
 }
 
+// ---------------------------------------------------------------------------
+// HEEP electron ID scale factor (EGM heep-id branch).
+// ---------------------------------------------------------------------------
+TEST_F(MuonScaleSmearing, HeepElectronIdScaleFactorIsReadFromTheHeepBranch) {
+    if (!mc_->HasElectronHEEPIDSF())
+        GTEST_SKIP() << "electron_heep is not configured for 2024";
+    const float nom = mc_->GetElectronHEEPIDSF(0.5f, 120.f, MyCorrection::variation::nom);
+    const float up = mc_->GetElectronHEEPIDSF(0.5f, 120.f, MyCorrection::variation::up);
+    const float down = mc_->GetElectronHEEPIDSF(0.5f, 120.f, MyCorrection::variation::down);
+    EXPECT_GT(nom, 0.8f);
+    EXPECT_LT(nom, 1.1f);
+    EXPECT_GE(up, nom);
+    EXPECT_LE(down, nom);
+    // Below the 35 GeV edge the map has error flow; the getter clamps.
+    EXPECT_NO_THROW(mc_->GetElectronHEEPIDSF(-1.9f, 20.f));
+    EXPECT_FLOAT_EQ(mc_->GetElectronHEEPIDSF(-1.9f, 20.f), mc_->GetElectronHEEPIDSF(-1.9f, 35.5f));
+    // Signed SC eta: the endcaps are separate bins.
+    EXPECT_NO_THROW(mc_->GetElectronHEEPIDSF(2.4f, 60.f));
+    EXPECT_NO_THROW(mc_->GetElectronHEEPIDSF(-2.4f, 3000.f));
+}
+
 } // namespace
